@@ -1,10 +1,12 @@
 package com.example.eventnotificator.service;
 
-import com.example.eventnotificator.domain.Notification;
+import com.example.eventnotificator.domain.Role;
+import com.example.eventnotificator.domain.User;
 import com.example.eventnotificator.dto.EventChangeKafkaMessage;
 import com.example.eventnotificator.entity.EventFieldChangeEntity;
 import com.example.eventnotificator.entity.NotificationEntity;
 import com.example.eventnotificator.repository.NotificationRepository;
+import com.example.eventnotificator.security.UserAuthenticationService;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -25,9 +26,9 @@ public class NotificationService {
     @Autowired
     private NotificationRepository notificationRepository;
 
-    public void getNotification(Object o) {
-        log.info("Info about object: {}", o);
-    }
+    @Autowired
+    private UserAuthenticationService authenticationService;
+
     public void createNotification(EventChangeKafkaMessage kafkaMessage) {
         log.info("Creating notification for {}", kafkaMessage);
 
@@ -64,16 +65,30 @@ public class NotificationService {
 
     public void readNotification(Long notificationId) {
         log.info("Read notification with id: {}", notificationId);
+
+        User user = authenticationService.getCurrentAuthenticatedUser();
         NotificationEntity notification = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new EntityNotFoundException("Notification with id: %s not founded".formatted(notificationId)));
+
+        if (notification.getIsRead()) {
+            throw new IllegalArgumentException("Notification already read");
+        }
+
+        if (!user.id().equals(notification.getUserId()) && !user.role().equals(Role.ADMIN)) {
+            throw new IllegalArgumentException("Can not read notification, because you not owner");
+        }
+
 
         notification.setIsRead(Boolean.TRUE);
 
         notificationRepository.save(notification);
     }
 
-    public List<Notification> getAllNotification() {
-        return null;
+    public List<Long> getAllNotification() {
+        log.info("Getting all notifications in service");
+        User user = authenticationService.getCurrentAuthenticatedUser();
+
+        return notificationRepository.findNotificationWithFalseIsRead(user.id());
     }
 
 }
